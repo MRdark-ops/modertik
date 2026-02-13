@@ -1,20 +1,52 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { StatusBadge } from "@/components/StatusBadge";
 import { Input } from "@/components/ui/input";
 import { Search, UserCog, Ban, CheckCircle } from "lucide-react";
 import { useState } from "react";
-
-const users = [
-  { id: 1, name: "Alice Johnson", email: "alice@example.com", balance: "$1,500.00", referrals: 5, status: "active", joined: "2026-01-15" },
-  { id: 2, name: "Bob Smith", email: "bob@example.com", balance: "$2,350.00", referrals: 12, status: "active", joined: "2026-01-10" },
-  { id: 3, name: "Carol White", email: "carol@example.com", balance: "$800.00", referrals: 3, status: "active", joined: "2026-02-01" },
-  { id: 4, name: "Dave Brown", email: "dave@example.com", balance: "$0.00", referrals: 0, status: "banned", joined: "2026-01-25" },
-  { id: 5, name: "Eve Wilson", email: "eve@example.com", balance: "$3,200.00", referrals: 28, status: "active", joined: "2025-12-20" },
-];
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
-  const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()));
+
+  const { data: users } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, user_id, full_name, balance, referral_code, created_at")
+        .order("created_at", { ascending: false });
+
+      if (!profiles) return [];
+
+      // Get referral counts
+      const { data: referrals } = await supabase
+        .from("referrals")
+        .select("referrer_id, level")
+        .eq("level", 1);
+
+      const refCounts: Record<string, number> = {};
+      referrals?.forEach((r) => {
+        refCounts[r.referrer_id] = (refCounts[r.referrer_id] || 0) + 1;
+      });
+
+      // Get roles
+      const { data: roles } = await supabase.from("user_roles").select("user_id, role");
+      const roleMap: Record<string, string> = {};
+      roles?.forEach((r) => { roleMap[r.user_id] = r.role; });
+
+      return profiles.map((p) => ({
+        ...p,
+        referrals: refCounts[p.user_id] || 0,
+        role: roleMap[p.user_id] || "user",
+      }));
+    },
+  });
+
+  const filtered = (users ?? []).filter(
+    (u) =>
+      u.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      u.referral_code.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <DashboardLayout isAdmin title="User Management">
@@ -37,34 +69,23 @@ export default function AdminUsersPage() {
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Balance</th>
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Referrals</th>
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Joined</th>
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium">Status</th>
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium">Actions</th>
+                  <th className="text-left py-3 px-4 text-muted-foreground font-medium">Role</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(u => (
                   <tr key={u.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
                     <td className="py-3 px-4">
-                      <p className="font-medium">{u.name}</p>
-                      <p className="text-xs text-muted-foreground">{u.email}</p>
+                      <p className="font-medium">{u.full_name || "Unnamed"}</p>
+                      <p className="text-xs text-muted-foreground">{u.referral_code}</p>
                     </td>
-                    <td className="py-3 px-4 font-semibold">{u.balance}</td>
+                    <td className="py-3 px-4 font-semibold">${Number(u.balance).toFixed(2)}</td>
                     <td className="py-3 px-4">{u.referrals}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{u.joined}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        u.status === 'active' ? 'bg-success/10 text-success border border-success/20' : 'bg-destructive/10 text-destructive border border-destructive/20'
-                      }`}>{u.status}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex gap-1">
-                        <button className="p-1.5 rounded hover:bg-secondary transition-colors" title="Edit">
-                          <UserCog className="w-4 h-4 text-muted-foreground" />
-                        </button>
-                        <button className="p-1.5 rounded hover:bg-secondary transition-colors" title={u.status === 'active' ? 'Ban' : 'Activate'}>
-                          {u.status === 'active' ? <Ban className="w-4 h-4 text-destructive" /> : <CheckCircle className="w-4 h-4 text-success" />}
-                        </button>
-                      </div>
+                        u.role === 'admin' ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-secondary text-muted-foreground border border-border'
+                      }`}>{u.role}</span>
                     </td>
                   </tr>
                 ))}

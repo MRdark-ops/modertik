@@ -1,14 +1,34 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatusBadge } from "@/components/StatusBadge";
-
-const withdrawals = [
-  { id: 1, user: "Bob Smith", amount: "$200.00", status: "pending" as const, date: "2026-02-11" },
-  { id: 2, user: "Carol White", amount: "$150.00", status: "pending" as const, date: "2026-02-11" },
-  { id: 3, user: "Alice Johnson", amount: "$500.00", status: "approved" as const, date: "2026-02-08" },
-  { id: 4, user: "Dave Brown", amount: "$300.00", status: "rejected" as const, date: "2026-02-05" },
-];
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export default function AdminWithdrawalsPage() {
+  const queryClient = useQueryClient();
+
+  const { data: withdrawals } = useQuery({
+    queryKey: ["admin-withdrawals"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("withdrawals")
+        .select("id, amount, status, created_at, wallet_address, user_id, profiles!inner(full_name)")
+        .order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const handleAction = async (withdrawalId: string, action: "approve" | "reject") => {
+    const { error } = await supabase.functions.invoke("approve-withdrawal", {
+      body: { withdrawal_id: withdrawalId, action, admin_note: "" },
+    });
+    if (error) toast.error("Failed to process withdrawal");
+    else {
+      toast.success(`Withdrawal ${action}d`);
+      queryClient.invalidateQueries({ queryKey: ["admin-withdrawals"] });
+    }
+  };
+
   return (
     <DashboardLayout isAdmin title="Withdrawal Management">
       <div className="space-y-6 animate-fade-in">
@@ -25,17 +45,17 @@ export default function AdminWithdrawalsPage() {
                 </tr>
               </thead>
               <tbody>
-                {withdrawals.map(w => (
+                {withdrawals?.map((w: any) => (
                   <tr key={w.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
-                    <td className="py-3 px-4 font-medium">{w.user}</td>
-                    <td className="py-3 px-4 font-semibold">{w.amount}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{w.date}</td>
-                    <td className="py-3 px-4"><StatusBadge status={w.status} /></td>
+                    <td className="py-3 px-4 font-medium">{w.profiles?.full_name}</td>
+                    <td className="py-3 px-4 font-semibold">${Number(w.amount).toFixed(2)}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{new Date(w.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 px-4"><StatusBadge status={w.status as any} /></td>
                     <td className="py-3 px-4">
                       {w.status === "pending" && (
                         <div className="flex gap-1">
-                          <button className="px-2 py-1 text-xs rounded bg-success/10 text-success border border-success/20 hover:bg-success/20">Approve</button>
-                          <button className="px-2 py-1 text-xs rounded bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20">Reject</button>
+                          <button onClick={() => handleAction(w.id, "approve")} className="px-2 py-1 text-xs rounded bg-success/10 text-success border border-success/20 hover:bg-success/20">Approve</button>
+                          <button onClick={() => handleAction(w.id, "reject")} className="px-2 py-1 text-xs rounded bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20">Reject</button>
                         </div>
                       )}
                     </td>

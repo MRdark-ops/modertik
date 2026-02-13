@@ -1,15 +1,20 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-
-const logs = [
-  { user: "Alice Johnson", action: "Login", ip: "192.168.1.100", date: "2026-02-12 14:30" },
-  { user: "Bob Smith", action: "Deposit submitted", ip: "10.0.0.55", date: "2026-02-12 13:15" },
-  { user: "Carol White", action: "Registration", ip: "172.16.0.22", date: "2026-02-11 09:45" },
-  { user: "Eve Wilson", action: "Withdrawal requested", ip: "192.168.1.200", date: "2026-02-11 08:20" },
-  { user: "Dave Brown", action: "Login failed", ip: "10.0.0.99", date: "2026-02-10 22:10" },
-  { user: "Alice Johnson", action: "Referral registration", ip: "192.168.1.100", date: "2026-02-10 16:00" },
-];
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function AdminLogsPage() {
+  const { data: logs } = useQuery({
+    queryKey: ["admin-logs"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("activity_logs")
+        .select("id, action, details, created_at, user_id, profiles!inner(full_name)")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return data ?? [];
+    },
+  });
+
   return (
     <DashboardLayout isAdmin title="Activity Logs">
       <div className="space-y-6 animate-fade-in">
@@ -20,23 +25,21 @@ export default function AdminLogsPage() {
                 <tr className="border-b border-border bg-secondary/30">
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">User</th>
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Action</th>
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium">IP Address</th>
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Date & Time</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log, i) => (
-                  <tr key={i} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
-                    <td className="py-3 px-4 font-medium">{log.user}</td>
+                {logs?.map((log: any) => (
+                  <tr key={log.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                    <td className="py-3 px-4 font-medium">{log.profiles?.full_name}</td>
                     <td className="py-3 px-4">
                       <span className={`text-xs px-2 py-0.5 rounded ${
-                        log.action.includes('failed') ? 'bg-destructive/10 text-destructive' :
-                        log.action.includes('Login') ? 'bg-primary/10 text-primary' :
+                        log.action.includes('rejected') || log.action.includes('failed') ? 'bg-destructive/10 text-destructive' :
+                        log.action.includes('approved') ? 'bg-success/10 text-success' :
                         'bg-secondary text-foreground'
-                      }`}>{log.action}</span>
+                      }`}>{log.action.replace(/_/g, " ")}</span>
                     </td>
-                    <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{log.ip}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{log.date}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{new Date(log.created_at).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
