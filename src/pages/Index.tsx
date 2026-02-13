@@ -6,7 +6,7 @@ import authBg from "@/assets/auth-bg.jpg";
 const features = [
   { icon: Wallet, title: "Secure Deposits", desc: "Fund your account with verified payment methods and admin-approved transactions." },
   { icon: Users, title: "5-Level Referrals", desc: "Earn commissions up to 5 levels deep — 10%, 8%, 6%, 4%, and 2% per level." },
-  { icon: Shield, title: "Bank-Grade Security", desc: "CSRF protection, encrypted passwords, and session-based authentication." },
+  { icon: Shield, title: "Bank-Grade Security", desc: "Input validation, secure authentication, and role-based access control." },
   { icon: BarChart3, title: "Real-Time Dashboard", desc: "Track your balance, earnings, referral network, and withdrawal history." },
 ];
 

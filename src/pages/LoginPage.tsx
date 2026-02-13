@@ -4,17 +4,36 @@ import { TrendingUp, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { z } from "zod";
+import { useToast } from "@/hooks/use-toast";
 import authBg from "@/assets/auth-bg.jpg";
+
+const loginSchema = z.object({
+  email: z.string().trim().email("Please enter a valid email address").max(255, "Email is too long"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128, "Password is too long"),
+});
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { toast } = useToast();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Will connect to backend later
-    window.location.href = "/dashboard";
+    setErrors({});
+    const result = loginSchema.safeParse({ email, password });
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {};
+      result.error.errors.forEach(err => {
+        if (err.path[0]) fieldErrors[err.path[0] as string] = err.message;
+      });
+      setErrors(fieldErrors);
+      return;
+    }
+    // TODO: Connect to backend authentication
+    toast({ title: "Backend not connected", description: "Authentication requires Lovable Cloud to be enabled.", variant: "destructive" });
   };
 
   return (
@@ -36,9 +55,10 @@ export default function LoginPage() {
               <Input
                 id="email" type="email" placeholder="you@example.com"
                 value={email} onChange={e => setEmail(e.target.value)}
-                className="bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11"
-                required
+                className={`bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11 ${errors.email ? 'border-destructive' : ''}`}
+                required maxLength={255}
               />
+              {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password" className="text-sm text-muted-foreground">Password</Label>
@@ -46,9 +66,10 @@ export default function LoginPage() {
                 <Input
                   id="password" type={showPassword ? "text" : "password"} placeholder="••••••••"
                   value={password} onChange={e => setPassword(e.target.value)}
-                  className="bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11 pr-10"
-                  required
+                  className={`bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11 pr-10 ${errors.password ? 'border-destructive' : ''}`}
+                  required maxLength={128}
                 />
+                {errors.password && <p className="text-xs text-destructive mt-1">{errors.password}</p>}
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
