@@ -67,22 +67,17 @@ export default function WithdrawPage() {
     if (!user) return;
 
     setSubmitting(true);
-    // Deduct balance immediately (will be refunded if rejected)
-    const newBalance = balance - parsed.data.amount;
-    await supabase.from("profiles").update({ balance: newBalance }).eq("user_id", user.id);
-
-    const { error } = await supabase.from("withdrawals").insert({
-      user_id: user.id,
-      amount: parsed.data.amount,
-      wallet_address: parsed.data.walletAddress,
-      status: "pending",
+    const { error } = await supabase.rpc("create_withdrawal", {
+      p_amount: parsed.data.amount,
+      p_wallet_address: parsed.data.walletAddress,
     });
     setSubmitting(false);
 
     if (error) {
-      // Refund on error
-      await supabase.from("profiles").update({ balance }).eq("user_id", user.id);
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      const msg = error.message.includes("Insufficient balance")
+        ? "Insufficient balance"
+        : error.message;
+      toast({ title: "Error", description: msg, variant: "destructive" });
     } else {
       toast({ title: "Withdrawal requested", description: "Your withdrawal is pending admin approval." });
       setAmount("");

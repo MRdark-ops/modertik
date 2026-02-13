@@ -228,6 +228,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_withdrawal: {
+        Args: { p_amount: number; p_wallet_address: string }
+        Returns: string
+      }
       generate_referral_code: { Args: never; Returns: string }
       has_role: {
         Args: {
