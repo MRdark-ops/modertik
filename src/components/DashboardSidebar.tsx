@@ -3,10 +3,11 @@ import {
   Users, Shield, UserCog, FileText, Activity, LogOut, TrendingUp
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
-  SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 
 const userItems = [
@@ -32,6 +33,13 @@ interface DashboardSidebarProps {
 export function DashboardSidebar({ isAdmin = false }: DashboardSidebarProps) {
   const items = isAdmin ? adminItems : userItems;
   const label = isAdmin ? "Admin Panel" : "Trading";
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   return (
     <Sidebar className="border-r border-border bg-sidebar">
@@ -73,14 +81,13 @@ export function DashboardSidebar({ isAdmin = false }: DashboardSidebarProps) {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <NavLink
-                    to="/login"
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                    activeClassName=""
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors w-full"
                   >
                     <LogOut className="w-4 h-4" />
                     <span className="text-sm font-medium">Logout</span>
-                  </NavLink>
+                  </button>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

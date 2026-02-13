@@ -7,39 +7,79 @@ import { ArrowUpFromLine } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const withdrawSchema = z.object({
   amount: z.number({ invalid_type_error: "Please enter a valid amount" }).min(50, "Minimum withdrawal is $50").max(10000, "Maximum withdrawal is $10,000"),
+  walletAddress: z.string().min(10, "Please enter a valid wallet address").max(200, "Wallet address is too long"),
 });
-
-const withdrawals = [
-  { id: 1, amount: "$200.00", status: "approved" as const, date: "2026-02-08" },
-  { id: 2, amount: "$150.00", status: "pending" as const, date: "2026-02-11" },
-  { id: 3, amount: "$500.00", status: "rejected" as const, date: "2026-02-05" },
-];
 
 export default function WithdrawPage() {
   const [amount, setAmount] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const { user, profile } = useAuth();
+  const queryClient = useQueryClient();
 
-  const handleSubmit = () => {
+  const { data: withdrawals = [] } = useQuery({
+    queryKey: ["withdrawals", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("withdrawals")
+        .select("*")
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!user,
+  });
+
+  const balance = profile?.balance ?? 0;
+
+  const handleSubmit = async () => {
     setErrors({});
-    const result = withdrawSchema.safeParse({ amount: parseFloat(amount) });
-    if (!result.success) {
+    const parsed = withdrawSchema.safeParse({ amount: parseFloat(amount), walletAddress });
+    if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
-      result.error.errors.forEach(err => {
-        fieldErrors.amount = err.message;
+      parsed.error.errors.forEach(err => {
+        if (err.path[0]) fieldErrors[err.path[0] as string] = err.message;
       });
       setErrors(fieldErrors);
       return;
     }
-    // Check against available balance (mock for now)
-    if (parseFloat(amount) > 2350) {
+    if (parsed.data.amount > balance) {
       setErrors({ amount: "Insufficient balance" });
       return;
     }
-    toast({ title: "Backend not connected", description: "Withdrawals require Lovable Cloud to be enabled.", variant: "destructive" });
+    if (!user) return;
+
+    setSubmitting(true);
+    // Deduct balance immediately (will be refunded if rejected)
+    const newBalance = balance - parsed.data.amount;
+    await supabase.from("profiles").update({ balance: newBalance }).eq("user_id", user.id);
+
+    const { error } = await supabase.from("withdrawals").insert({
+      user_id: user.id,
+      amount: parsed.data.amount,
+      wallet_address: parsed.data.walletAddress,
+      status: "pending",
+    });
+    setSubmitting(false);
+
+    if (error) {
+      // Refund on error
+      await supabase.from("profiles").update({ balance }).eq("user_id", user.id);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Withdrawal requested", description: "Your withdrawal is pending admin approval." });
+      setAmount("");
+      setWalletAddress("");
+      queryClient.invalidateQueries({ queryKey: ["withdrawals"] });
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+    }
   };
 
   return (
@@ -53,7 +93,7 @@ export default function WithdrawPage() {
             <div className="p-4 rounded-lg bg-secondary/50 border border-border">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Available Balance</span>
-                <span className="font-semibold gold-gradient-text">$2,350.00</span>
+                <span className="font-semibold gold-gradient-text">${Number(balance).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm mt-1">
                 <span className="text-muted-foreground">Minimum Withdrawal</span>
@@ -63,10 +103,18 @@ export default function WithdrawPage() {
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Withdrawal Amount (USD)</Label>
               <Input type="number" placeholder="50.00" value={amount} onChange={e => setAmount(e.target.value)}
-                className={`bg-secondary border-border focus:border-primary h-11 ${errors.amount ? 'border-destructive' : ''}`} min="50" max="10000" step="0.01" />
+                className={`bg-secondary border-border focus:border-primary h-11 ${errors.amount ? 'border-destructive' : ''}`} min="50" max="10000" step="0.01" disabled={submitting} />
               {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
             </div>
-            <Button onClick={handleSubmit} className="bg-primary text-primary-foreground hover:bg-primary/90">Request Withdrawal</Button>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Wallet Address</Label>
+              <Input placeholder="Enter your wallet address" value={walletAddress} onChange={e => setWalletAddress(e.target.value)}
+                className={`bg-secondary border-border focus:border-primary h-11 ${errors.walletAddress ? 'border-destructive' : ''}`} maxLength={200} disabled={submitting} />
+              {errors.walletAddress && <p className="text-xs text-destructive">{errors.walletAddress}</p>}
+            </div>
+            <Button onClick={handleSubmit} disabled={submitting} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              {submitting ? "Submitting..." : "Request Withdrawal"}
+            </Button>
           </div>
         </div>
 
@@ -82,13 +130,16 @@ export default function WithdrawPage() {
                 </tr>
               </thead>
               <tbody>
-                {withdrawals.map(w => (
+                {withdrawals.map((w: any) => (
                   <tr key={w.id} className="border-b border-border/50">
-                    <td className="py-3">{w.date}</td>
-                    <td className="py-3 font-semibold">{w.amount}</td>
+                    <td className="py-3">{new Date(w.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 font-semibold">${Number(w.amount).toFixed(2)}</td>
                     <td className="py-3"><StatusBadge status={w.status} /></td>
                   </tr>
                 ))}
+                {withdrawals.length === 0 && (
+                  <tr><td colSpan={3} className="py-6 text-center text-muted-foreground">No withdrawals yet</td></tr>
+                )}
               </tbody>
             </table>
           </div>

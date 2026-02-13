@@ -7,24 +7,37 @@ import { ArrowDownToLine, Upload } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const depositSchema = z.object({
   amount: z.number({ invalid_type_error: "Please enter a valid amount" }).min(10, "Minimum deposit is $10").max(100000, "Maximum deposit is $100,000"),
 });
 
 const ALLOWED_FILE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-
-const deposits = [
-  { id: 1, amount: "$500.00", status: "approved" as const, date: "2026-02-10", proof: "receipt_001.png" },
-  { id: 2, amount: "$1,000.00", status: "pending" as const, date: "2026-02-12", proof: "receipt_002.png" },
-];
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 export default function DepositPage() {
   const [amount, setAmount] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const { data: deposits = [] } = useQuery({
+    queryKey: ["deposits", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("deposits")
+        .select("*")
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!user,
+  });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -41,14 +54,12 @@ export default function DepositPage() {
     setFile(selected);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setErrors({});
     const result = depositSchema.safeParse({ amount: parseFloat(amount) });
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
-      result.error.errors.forEach(err => {
-        fieldErrors.amount = err.message;
-      });
+      result.error.errors.forEach(err => { fieldErrors.amount = err.message; });
       setErrors(fieldErrors);
       return;
     }
@@ -56,13 +67,48 @@ export default function DepositPage() {
       setErrors({ file: "Please upload proof of payment" });
       return;
     }
-    toast({ title: "Backend not connected", description: "Deposits require Lovable Cloud to be enabled.", variant: "destructive" });
+    if (!user) return;
+
+    setSubmitting(true);
+    try {
+      // Upload proof to storage
+      const ext = file.name.split(".").pop();
+      const filePath = `${user.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("deposit-proofs")
+        .upload(filePath, file);
+
+      if (uploadError) {
+        toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" });
+        setSubmitting(false);
+        return;
+      }
+
+      // Create deposit record
+      const { error: insertError } = await supabase.from("deposits").insert({
+        user_id: user.id,
+        amount: result.data.amount,
+        proof_url: filePath,
+        status: "pending",
+      });
+
+      if (insertError) {
+        toast({ title: "Error", description: insertError.message, variant: "destructive" });
+      } else {
+        toast({ title: "Deposit submitted", description: "Your deposit is pending admin approval." });
+        setAmount("");
+        setFile(null);
+        queryClient.invalidateQueries({ queryKey: ["deposits"] });
+      }
+    } catch {
+      toast({ title: "Error", description: "Something went wrong.", variant: "destructive" });
+    }
+    setSubmitting(false);
   };
 
   return (
     <DashboardLayout title="Deposit Funds">
       <div className="space-y-6 animate-fade-in max-w-4xl">
-        {/* Deposit Form */}
         <div className="glass-card p-6">
           <h3 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
             <ArrowDownToLine className="w-5 h-5 text-primary" /> New Deposit
@@ -77,7 +123,7 @@ export default function DepositPage() {
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">Amount (USD)</Label>
                 <Input type="number" placeholder="100.00" value={amount} onChange={e => setAmount(e.target.value)}
-                  className={`bg-secondary border-border focus:border-primary h-11 ${errors.amount ? 'border-destructive' : ''}`} min="10" max="100000" step="0.01" />
+                  className={`bg-secondary border-border focus:border-primary h-11 ${errors.amount ? 'border-destructive' : ''}`} min="10" max="100000" step="0.01" disabled={submitting} />
                 {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
               </div>
               <div className="space-y-2">
@@ -86,17 +132,19 @@ export default function DepositPage() {
                   <label className="flex-1 flex items-center justify-center gap-2 h-11 rounded-md border border-dashed border-border bg-secondary cursor-pointer hover:border-primary/50 transition-colors">
                     <Upload className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">Choose file</span>
-                    <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp" onChange={handleFileChange} />
+                    <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp" onChange={handleFileChange} disabled={submitting} />
                   </label>
                   {file && <span className="text-xs text-muted-foreground truncate max-w-[120px]">{file.name}</span>}
                 </div>
+                {errors.file && <p className="text-xs text-destructive">{errors.file}</p>}
               </div>
             </div>
-            <Button onClick={handleSubmit} className="bg-primary text-primary-foreground hover:bg-primary/90">Submit Deposit</Button>
+            <Button onClick={handleSubmit} disabled={submitting} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              {submitting ? "Submitting..." : "Submit Deposit"}
+            </Button>
           </div>
         </div>
 
-        {/* Deposit History */}
         <div className="glass-card p-6">
           <h3 className="font-display text-lg font-semibold mb-4">Deposit History</h3>
           <div className="overflow-x-auto">
@@ -105,19 +153,20 @@ export default function DepositPage() {
                 <tr className="border-b border-border">
                   <th className="text-left py-3 text-muted-foreground font-medium">Date</th>
                   <th className="text-left py-3 text-muted-foreground font-medium">Amount</th>
-                  <th className="text-left py-3 text-muted-foreground font-medium">Proof</th>
                   <th className="text-left py-3 text-muted-foreground font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {deposits.map(d => (
+                {deposits.map((d: any) => (
                   <tr key={d.id} className="border-b border-border/50">
-                    <td className="py-3">{d.date}</td>
-                    <td className="py-3 font-semibold">{d.amount}</td>
-                    <td className="py-3 text-muted-foreground">{d.proof}</td>
+                    <td className="py-3">{new Date(d.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 font-semibold">${Number(d.amount).toFixed(2)}</td>
                     <td className="py-3"><StatusBadge status={d.status} /></td>
                   </tr>
                 ))}
+                {deposits.length === 0 && (
+                  <tr><td colSpan={3} className="py-6 text-center text-muted-foreground">No deposits yet</td></tr>
+                )}
               </tbody>
             </table>
           </div>
