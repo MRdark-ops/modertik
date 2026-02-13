@@ -71,18 +71,30 @@ export default function DepositPage() {
 
     setSubmitting(true);
     try {
-      // Upload proof to storage
-      const ext = file.name.split(".").pop();
-      const filePath = `${user.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("deposit-proofs")
-        .upload(filePath, file);
+      // Upload proof via server-side validated edge function
+      const formData = new FormData();
+      formData.append("file", file);
 
-      if (uploadError) {
-        toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" });
+      const { data: { session } } = await supabase.auth.getSession();
+      const uploadRes = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-deposit-proof`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json();
+        toast({ title: "Upload failed", description: err.error || "Upload failed", variant: "destructive" });
         setSubmitting(false);
         return;
       }
+
+      const { path: filePath } = await uploadRes.json();
 
       // Create deposit record
       const { error: insertError } = await supabase.from("deposits").insert({
