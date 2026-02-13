@@ -11,9 +11,19 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+const ETH_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const BTC_ADDRESS_REGEX = /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/;
+const TRX_ADDRESS_REGEX = /^T[a-zA-HJ-NP-Z0-9]{33}$/;
+
 const withdrawSchema = z.object({
   amount: z.number({ invalid_type_error: "Please enter a valid amount" }).min(50, "Minimum withdrawal is $50").max(10000, "Maximum withdrawal is $10,000"),
-  walletAddress: z.string().min(10, "Please enter a valid wallet address").max(200, "Wallet address is too long"),
+  walletAddress: z.string()
+    .min(26, "Wallet address is too short")
+    .max(62, "Wallet address is too long")
+    .refine(
+      addr => ETH_ADDRESS_REGEX.test(addr) || BTC_ADDRESS_REGEX.test(addr) || TRX_ADDRESS_REGEX.test(addr),
+      "Please enter a valid cryptocurrency wallet address (ETH, BTC, or TRX)"
+    ),
 });
 
 export default function WithdrawPage() {
