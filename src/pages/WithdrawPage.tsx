@@ -5,6 +5,12 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ArrowUpFromLine } from "lucide-react";
 import { useState } from "react";
+import { z } from "zod";
+import { useToast } from "@/hooks/use-toast";
+
+const withdrawSchema = z.object({
+  amount: z.number({ invalid_type_error: "Please enter a valid amount" }).min(50, "Minimum withdrawal is $50").max(10000, "Maximum withdrawal is $10,000"),
+});
 
 const withdrawals = [
   { id: 1, amount: "$200.00", status: "approved" as const, date: "2026-02-08" },
@@ -14,6 +20,27 @@ const withdrawals = [
 
 export default function WithdrawPage() {
   const [amount, setAmount] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { toast } = useToast();
+
+  const handleSubmit = () => {
+    setErrors({});
+    const result = withdrawSchema.safeParse({ amount: parseFloat(amount) });
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {};
+      result.error.errors.forEach(err => {
+        fieldErrors.amount = err.message;
+      });
+      setErrors(fieldErrors);
+      return;
+    }
+    // Check against available balance (mock for now)
+    if (parseFloat(amount) > 2350) {
+      setErrors({ amount: "Insufficient balance" });
+      return;
+    }
+    toast({ title: "Backend not connected", description: "Withdrawals require Lovable Cloud to be enabled.", variant: "destructive" });
+  };
 
   return (
     <DashboardLayout title="Withdraw Funds">
@@ -36,9 +63,10 @@ export default function WithdrawPage() {
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Withdrawal Amount (USD)</Label>
               <Input type="number" placeholder="50.00" value={amount} onChange={e => setAmount(e.target.value)}
-                className="bg-secondary border-border focus:border-primary h-11" />
+                className={`bg-secondary border-border focus:border-primary h-11 ${errors.amount ? 'border-destructive' : ''}`} min="50" max="10000" step="0.01" />
+              {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
             </div>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">Request Withdrawal</Button>
+            <Button onClick={handleSubmit} className="bg-primary text-primary-foreground hover:bg-primary/90">Request Withdrawal</Button>
           </div>
         </div>
 

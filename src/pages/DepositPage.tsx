@@ -5,6 +5,15 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ArrowDownToLine, Upload } from "lucide-react";
 import { useState } from "react";
+import { z } from "zod";
+import { useToast } from "@/hooks/use-toast";
+
+const depositSchema = z.object({
+  amount: z.number({ invalid_type_error: "Please enter a valid amount" }).min(10, "Minimum deposit is $10").max(100000, "Maximum deposit is $100,000"),
+});
+
+const ALLOWED_FILE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 const deposits = [
   { id: 1, amount: "$500.00", status: "approved" as const, date: "2026-02-10", proof: "receipt_001.png" },
@@ -13,6 +22,42 @@ const deposits = [
 
 export default function DepositPage() {
   const [amount, setAmount] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { toast } = useToast();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    if (!ALLOWED_FILE_TYPES.includes(selected.type)) {
+      setErrors(prev => ({ ...prev, file: "Only PNG, JPEG, and WebP images are allowed" }));
+      return;
+    }
+    if (selected.size > MAX_FILE_SIZE) {
+      setErrors(prev => ({ ...prev, file: "File must be under 5MB" }));
+      return;
+    }
+    setErrors(prev => { const { file, ...rest } = prev; return rest; });
+    setFile(selected);
+  };
+
+  const handleSubmit = () => {
+    setErrors({});
+    const result = depositSchema.safeParse({ amount: parseFloat(amount) });
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {};
+      result.error.errors.forEach(err => {
+        fieldErrors.amount = err.message;
+      });
+      setErrors(fieldErrors);
+      return;
+    }
+    if (!file) {
+      setErrors({ file: "Please upload proof of payment" });
+      return;
+    }
+    toast({ title: "Backend not connected", description: "Deposits require Lovable Cloud to be enabled.", variant: "destructive" });
+  };
 
   return (
     <DashboardLayout title="Deposit Funds">
@@ -32,7 +77,8 @@ export default function DepositPage() {
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">Amount (USD)</Label>
                 <Input type="number" placeholder="100.00" value={amount} onChange={e => setAmount(e.target.value)}
-                  className="bg-secondary border-border focus:border-primary h-11" />
+                  className={`bg-secondary border-border focus:border-primary h-11 ${errors.amount ? 'border-destructive' : ''}`} min="10" max="100000" step="0.01" />
+                {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
               </div>
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">Upload Proof</Label>
@@ -40,12 +86,13 @@ export default function DepositPage() {
                   <label className="flex-1 flex items-center justify-center gap-2 h-11 rounded-md border border-dashed border-border bg-secondary cursor-pointer hover:border-primary/50 transition-colors">
                     <Upload className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">Choose file</span>
-                    <input type="file" className="hidden" accept="image/*" />
+                    <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp" onChange={handleFileChange} />
                   </label>
+                  {file && <span className="text-xs text-muted-foreground truncate max-w-[120px]">{file.name}</span>}
                 </div>
               </div>
             </div>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">Submit Deposit</Button>
+            <Button onClick={handleSubmit} className="bg-primary text-primary-foreground hover:bg-primary/90">Submit Deposit</Button>
           </div>
         </div>
 
