@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/hooks/useAuth";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import LoginPage from "./pages/LoginPage";
@@ -26,22 +28,24 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/dashboard" element={<UserDashboard />} />
-          <Route path="/deposit" element={<DepositPage />} />
-          <Route path="/withdraw" element={<WithdrawPage />} />
-          <Route path="/referrals" element={<ReferralsPage />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/users" element={<AdminUsersPage />} />
-          <Route path="/admin/deposits" element={<AdminDepositsPage />} />
-          <Route path="/admin/withdrawals" element={<AdminWithdrawalsPage />} />
-          <Route path="/admin/referrals" element={<AdminReferralsPage />} />
-          <Route path="/admin/logs" element={<AdminLogsPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/dashboard" element={<ProtectedRoute><UserDashboard /></ProtectedRoute>} />
+            <Route path="/deposit" element={<ProtectedRoute><DepositPage /></ProtectedRoute>} />
+            <Route path="/withdraw" element={<ProtectedRoute><WithdrawPage /></ProtectedRoute>} />
+            <Route path="/referrals" element={<ProtectedRoute><ReferralsPage /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/admin/users" element={<ProtectedRoute requireAdmin><AdminUsersPage /></ProtectedRoute>} />
+            <Route path="/admin/deposits" element={<ProtectedRoute requireAdmin><AdminDepositsPage /></ProtectedRoute>} />
+            <Route path="/admin/withdrawals" element={<ProtectedRoute requireAdmin><AdminWithdrawalsPage /></ProtectedRoute>} />
+            <Route path="/admin/referrals" element={<ProtectedRoute requireAdmin><AdminReferralsPage /></ProtectedRoute>} />
+            <Route path="/admin/logs" element={<ProtectedRoute requireAdmin><AdminLogsPage /></ProtectedRoute>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

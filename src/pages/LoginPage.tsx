@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { TrendingUp, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import authBg from "@/assets/auth-bg.jpg";
 
 const loginSchema = z.object({
@@ -18,9 +19,11 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
     const result = loginSchema.safeParse({ email, password });
@@ -32,13 +35,36 @@ export default function LoginPage() {
       setErrors(fieldErrors);
       return;
     }
-    // TODO: Connect to backend authentication
-    toast({ title: "Backend not connected", description: "Authentication requires Lovable Cloud to be enabled.", variant: "destructive" });
+
+    setSubmitting(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: result.data.email,
+      password: result.data.password,
+    });
+    setSubmitting(false);
+
+    if (error) {
+      toast({ title: "Login failed", description: "Invalid email or password.", variant: "destructive" });
+      return;
+    }
+
+    // Check if admin
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: roles } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id);
+      if (roles?.some(r => r.role === "admin")) {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
+    }
   };
 
   return (
     <div className="min-h-screen flex">
-      {/* Left panel - form */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center space-y-2">
@@ -56,7 +82,7 @@ export default function LoginPage() {
                 id="email" type="email" placeholder="you@example.com"
                 value={email} onChange={e => setEmail(e.target.value)}
                 className={`bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11 ${errors.email ? 'border-destructive' : ''}`}
-                required maxLength={255}
+                required maxLength={255} disabled={submitting}
               />
               {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
             </div>
@@ -67,7 +93,7 @@ export default function LoginPage() {
                   id="password" type={showPassword ? "text" : "password"} placeholder="••••••••"
                   value={password} onChange={e => setPassword(e.target.value)}
                   className={`bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11 pr-10 ${errors.password ? 'border-destructive' : ''}`}
-                  required maxLength={128}
+                  required maxLength={128} disabled={submitting}
                 />
                 {errors.password && <p className="text-xs text-destructive mt-1">{errors.password}</p>}
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
@@ -76,8 +102,8 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
-            <Button type="submit" className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
-              Sign In
+            <Button type="submit" disabled={submitting} className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
+              {submitting ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 
@@ -87,7 +113,6 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
-      {/* Right panel - image */}
       <div className="hidden lg:block flex-1 relative overflow-hidden">
         <img src={authBg} alt="Trading background" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-background/40" />

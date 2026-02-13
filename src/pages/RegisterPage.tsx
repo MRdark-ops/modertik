@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { TrendingUp, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import authBg from "@/assets/auth-bg.jpg";
 
 const registerSchema = z.object({
@@ -23,9 +24,11 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ fullName: "", email: "", password: "", referralCode: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
     const result = registerSchema.safeParse(form);
@@ -37,7 +40,28 @@ export default function RegisterPage() {
       setErrors(fieldErrors);
       return;
     }
-    toast({ title: "Backend not connected", description: "Registration requires Lovable Cloud to be enabled.", variant: "destructive" });
+
+    setSubmitting(true);
+    const { error } = await supabase.auth.signUp({
+      email: result.data.email,
+      password: result.data.password,
+      options: {
+        emailRedirectTo: window.location.origin,
+        data: {
+          full_name: result.data.fullName,
+          referral_code: result.data.referralCode || undefined,
+        },
+      },
+    });
+    setSubmitting(false);
+
+    if (error) {
+      toast({ title: "Registration failed", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    toast({ title: "Account created!", description: "Please check your email to verify your account before signing in." });
+    navigate("/login");
   };
 
   const update = (key: string, value: string) => setForm(f => ({ ...f, [key]: value }));
@@ -58,13 +82,13 @@ export default function RegisterPage() {
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Full Name</Label>
               <Input placeholder="John Doe" value={form.fullName} onChange={e => update("fullName", e.target.value)}
-                className={`bg-secondary border-border focus:border-primary h-11 ${errors.fullName ? 'border-destructive' : ''}`} required maxLength={100} />
+                className={`bg-secondary border-border focus:border-primary h-11 ${errors.fullName ? 'border-destructive' : ''}`} required maxLength={100} disabled={submitting} />
               {errors.fullName && <p className="text-xs text-destructive">{errors.fullName}</p>}
             </div>
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Email</Label>
               <Input type="email" placeholder="you@example.com" value={form.email} onChange={e => update("email", e.target.value)}
-                className={`bg-secondary border-border focus:border-primary h-11 ${errors.email ? 'border-destructive' : ''}`} required maxLength={255} />
+                className={`bg-secondary border-border focus:border-primary h-11 ${errors.email ? 'border-destructive' : ''}`} required maxLength={255} disabled={submitting} />
               {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
             </div>
             <div className="space-y-2">
@@ -72,7 +96,7 @@ export default function RegisterPage() {
               <div className="relative">
                 <Input type={showPassword ? "text" : "password"} placeholder="••••••••" value={form.password}
                   onChange={e => update("password", e.target.value)}
-                  className={`bg-secondary border-border focus:border-primary h-11 pr-10 ${errors.password ? 'border-destructive' : ''}`} required maxLength={128} />
+                  className={`bg-secondary border-border focus:border-primary h-11 pr-10 ${errors.password ? 'border-destructive' : ''}`} required maxLength={128} disabled={submitting} />
                 {errors.password && <p className="text-xs text-destructive mt-1">{errors.password}</p>}
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -83,11 +107,11 @@ export default function RegisterPage() {
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Referral Code (Optional)</Label>
               <Input placeholder="Enter referral code" value={form.referralCode} onChange={e => update("referralCode", e.target.value)}
-                className={`bg-secondary border-border focus:border-primary h-11 ${errors.referralCode ? 'border-destructive' : ''}`} maxLength={20} />
+                className={`bg-secondary border-border focus:border-primary h-11 ${errors.referralCode ? 'border-destructive' : ''}`} maxLength={20} disabled={submitting} />
               {errors.referralCode && <p className="text-xs text-destructive">{errors.referralCode}</p>}
             </div>
-            <Button type="submit" className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
-              Create Account
+            <Button type="submit" disabled={submitting} className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
+              {submitting ? "Creating account..." : "Create Account"}
             </Button>
           </form>
 
