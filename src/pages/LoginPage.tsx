@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { TrendingUp, Eye, EyeOff } from "lucide-react";
+import { TrendingUp, Eye, EyeOff, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [needs2FA, setNeeds2FA] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -37,16 +39,64 @@ export default function LoginPage() {
     }
 
     setSubmitting(true);
+
+    // Check if 2FA is required
+    try {
+      const checkRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/totp-check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: result.data.email }),
+      });
+      const checkData = await checkRes.json();
+
+      if (checkData.required && !needs2FA) {
+        setNeeds2FA(true);
+        setSubmitting(false);
+        return;
+      }
+    } catch {
+      // If check fails, proceed without 2FA
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
       email: result.data.email,
       password: result.data.password,
     });
-    setSubmitting(false);
-
+    
     if (error) {
       toast({ title: "Login failed", description: "Invalid email or password.", variant: "destructive" });
+      setSubmitting(false);
+      setNeeds2FA(false);
+      setTotpCode("");
       return;
     }
+
+    // Verify 2FA code if required
+    if (needs2FA) {
+      try {
+        const verifyRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/totp-verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: result.data.email, code: totpCode }),
+        });
+        const verifyData = await verifyRes.json();
+
+        if (!verifyData.verified) {
+          // Sign out since 2FA failed
+          await supabase.auth.signOut();
+          toast({ title: "2FA Failed", description: verifyData.error || "Invalid verification code.", variant: "destructive" });
+          setSubmitting(false);
+          return;
+        }
+      } catch {
+        await supabase.auth.signOut();
+        toast({ title: "Error", description: "2FA verification failed.", variant: "destructive" });
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    setSubmitting(false);
 
     // Check if admin
     const { data: { user } } = await supabase.auth.getUser();
@@ -82,7 +132,7 @@ export default function LoginPage() {
                 id="email" type="email" placeholder="you@example.com"
                 value={email} onChange={e => setEmail(e.target.value)}
                 className={`bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11 ${errors.email ? 'border-destructive' : ''}`}
-                required maxLength={255} disabled={submitting}
+                required maxLength={255} disabled={submitting || needs2FA}
               />
               {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
             </div>
@@ -93,7 +143,7 @@ export default function LoginPage() {
                   id="password" type={showPassword ? "text" : "password"} placeholder="••••••••"
                   value={password} onChange={e => setPassword(e.target.value)}
                   className={`bg-secondary border-border focus:border-primary focus:ring-primary/20 h-11 pr-10 ${errors.password ? 'border-destructive' : ''}`}
-                  required maxLength={128} disabled={submitting}
+                  required maxLength={128} disabled={submitting || needs2FA}
                 />
                 {errors.password && <p className="text-xs text-destructive mt-1">{errors.password}</p>}
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
@@ -102,9 +152,35 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
-            <Button type="submit" disabled={submitting} className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
-              {submitting ? "Signing in..." : "Sign In"}
+
+            {needs2FA && (
+              <div className="space-y-2 p-4 rounded-lg bg-primary/5 border border-primary/20 animate-fade-in">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-4 h-4 text-primary" />
+                  <Label className="text-sm font-medium text-primary">Two-Factor Authentication</Label>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">Enter the 6-digit code from your authenticator app</p>
+                <Input
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={e => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="bg-secondary border-border focus:border-primary h-11 text-center text-lg tracking-widest max-w-[200px]"
+                  maxLength={6}
+                  disabled={submitting}
+                  autoFocus
+                />
+              </div>
+            )}
+
+            <Button type="submit" disabled={submitting || (needs2FA && totpCode.length !== 6)} className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
+              {submitting ? "Signing in..." : needs2FA ? "Verify & Sign In" : "Sign In"}
             </Button>
+
+            {needs2FA && (
+              <Button type="button" variant="ghost" className="w-full text-muted-foreground" onClick={() => { setNeeds2FA(false); setTotpCode(""); }}>
+                Back to login
+              </Button>
+            )}
           </form>
 
           <p className="text-center text-sm text-muted-foreground">

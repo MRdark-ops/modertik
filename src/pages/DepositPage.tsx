@@ -3,13 +3,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ArrowDownToLine, Upload } from "lucide-react";
+import { ArrowDownToLine, Upload, CheckCircle, X } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "@/components/ui/dialog";
 
 const depositSchema = z.object({
   amount: z.number({ invalid_type_error: "Please enter a valid amount" }).min(10, "Minimum deposit is $10").max(100000, "Maximum deposit is $100,000"),
@@ -23,6 +31,8 @@ export default function DepositPage() {
   const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [lastDepositAmount, setLastDepositAmount] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -71,7 +81,6 @@ export default function DepositPage() {
 
     setSubmitting(true);
     try {
-      // Upload proof via server-side validated edge function
       const formData = new FormData();
       formData.append("file", file);
 
@@ -80,9 +89,7 @@ export default function DepositPage() {
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-deposit-proof`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${session?.access_token}`,
-          },
+          headers: { Authorization: `Bearer ${session?.access_token}` },
           body: formData,
         }
       );
@@ -96,7 +103,6 @@ export default function DepositPage() {
 
       const { path: filePath } = await uploadRes.json();
 
-      // Create deposit record
       const { error: insertError } = await supabase.from("deposits").insert({
         user_id: user.id,
         amount: result.data.amount,
@@ -107,7 +113,8 @@ export default function DepositPage() {
       if (insertError) {
         toast({ title: "Error", description: insertError.message, variant: "destructive" });
       } else {
-        toast({ title: "Deposit submitted", description: "Your deposit is pending admin approval." });
+        setLastDepositAmount(result.data.amount.toFixed(2));
+        setShowConfirmation(true);
         setAmount("");
         setFile(null);
         queryClient.invalidateQueries({ queryKey: ["deposits"] });
@@ -184,6 +191,42 @@ export default function DepositPage() {
           </div>
         </div>
       </div>
+
+      {/* Deposit Confirmation Modal */}
+      <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
+        <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <CheckCircle className="w-6 h-6 text-success" />
+              Deposit Request Submitted
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Your deposit request for <span className="font-semibold text-foreground">${lastDepositAmount}</span> has been successfully submitted and is pending admin approval.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+              <p className="text-sm font-medium text-primary mb-2">What happens next?</p>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Your deposit will be reviewed by our team</li>
+                <li>• Approval typically takes 1-24 hours</li>
+                <li>• You'll see the status update in your deposit history</li>
+              </ul>
+            </div>
+            <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+              <p className="text-sm font-medium mb-2">Need help? Contact our support team</p>
+              <p className="text-xs text-muted-foreground">
+                For any questions about your deposit, please reach out via our support channels available in your dashboard.
+              </p>
+            </div>
+            <DialogClose asChild>
+              <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                <X className="w-4 h-4 mr-2" /> Close
+              </Button>
+            </DialogClose>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

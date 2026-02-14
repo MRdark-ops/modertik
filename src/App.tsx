@@ -13,6 +13,7 @@ import UserDashboard from "./pages/UserDashboard";
 import DepositPage from "./pages/DepositPage";
 import WithdrawPage from "./pages/WithdrawPage";
 import ReferralsPage from "./pages/ReferralsPage";
+import SecuritySettingsPage from "./pages/SecuritySettingsPage";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminDepositsPage from "./pages/AdminDepositsPage";
@@ -37,6 +38,7 @@ const App = () => (
             <Route path="/deposit" element={<ProtectedRoute><DepositPage /></ProtectedRoute>} />
             <Route path="/withdraw" element={<ProtectedRoute><WithdrawPage /></ProtectedRoute>} />
             <Route path="/referrals" element={<ProtectedRoute><ReferralsPage /></ProtectedRoute>} />
+            <Route path="/security" element={<ProtectedRoute><SecuritySettingsPage /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />
             <Route path="/admin/users" element={<ProtectedRoute requireAdmin><AdminUsersPage /></ProtectedRoute>} />
             <Route path="/admin/deposits" element={<ProtectedRoute requireAdmin><AdminDepositsPage /></ProtectedRoute>} />

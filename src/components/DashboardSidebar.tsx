@@ -15,6 +15,7 @@ const userItems = [
   { title: "Deposit", url: "/deposit", icon: ArrowDownToLine },
   { title: "Withdraw", url: "/withdraw", icon: ArrowUpFromLine },
   { title: "Referrals", url: "/referrals", icon: Users },
+  { title: "Security", url: "/security", icon: Shield },
 ];
 
 const adminItems = [
