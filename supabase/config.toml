@@ -6,9 +6,6 @@ verify_jwt = false
 [functions.totp-verify]
 verify_jwt = false
 
-[functions.totp-check]
-verify_jwt = false
-
 [functions.auth-with-totp]
 verify_jwt = false
 
