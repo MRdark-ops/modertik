@@ -50,6 +50,9 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const MIN_RESPONSE_TIME = 200;
+
   try {
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
