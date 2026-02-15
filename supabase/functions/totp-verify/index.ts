@@ -45,10 +45,20 @@ async function verifyTOTP(secret: string, code: string, window = 1): Promise<boo
   return false;
 }
 
+async function normalizeTime(startTime: number, minMs: number) {
+  const elapsed = Date.now() - startTime;
+  if (elapsed < minMs) {
+    await new Promise(resolve => setTimeout(resolve, minMs - elapsed));
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const MIN_RESPONSE_TIME = 200; // Normalize timing to prevent enumeration
 
   try {
     const supabaseAdmin = createClient(
@@ -59,22 +69,17 @@ Deno.serve(async (req) => {
     const { email, code } = await req.json();
 
     if (!email || !code || typeof code !== "string" || !/^\d{6}$/.test(code)) {
+      await normalizeTime(startTime, MIN_RESPONSE_TIME);
       return new Response(JSON.stringify({ error: "Email and valid 6-digit code required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Find user by email
-    const { data: { users }, error: listErr } = await supabaseAdmin.auth.admin.listUsers();
-    if (listErr) {
-      return new Response(JSON.stringify({ error: "Internal error" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Use getUserByEmail instead of listing all users
+    const { data: { user: targetUser }, error: userErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
 
-    const targetUser = users?.find(u => u.email === email);
-    if (!targetUser) {
-      // Don't reveal if user exists
+    if (userErr || !targetUser) {
+      await normalizeTime(startTime, MIN_RESPONSE_TIME);
       return new Response(JSON.stringify({ error: "Invalid code" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -87,7 +92,7 @@ Deno.serve(async (req) => {
       .single();
 
     if (!totp?.is_enabled) {
-      // 2FA not enabled, just pass
+      await normalizeTime(startTime, MIN_RESPONSE_TIME);
       return new Response(JSON.stringify({ verified: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -101,6 +106,7 @@ Deno.serve(async (req) => {
         details: { timestamp: new Date().toISOString() },
       });
 
+      await normalizeTime(startTime, MIN_RESPONSE_TIME);
       return new Response(JSON.stringify({ error: "Invalid verification code" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -112,11 +118,13 @@ Deno.serve(async (req) => {
       details: { timestamp: new Date().toISOString() },
     });
 
+    await normalizeTime(startTime, MIN_RESPONSE_TIME);
     return new Response(JSON.stringify({ verified: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error("totp-verify error:", err);
+    await normalizeTime(startTime, MIN_RESPONSE_TIME);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
