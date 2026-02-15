@@ -40,77 +40,66 @@ export default function LoginPage() {
 
     setSubmitting(true);
 
-    // Check if 2FA is required
     try {
-      const checkRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/totp-check`, {
+      // Server-side atomic auth: password + TOTP verified BEFORE session is returned
+      const authRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-with-totp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: result.data.email }),
+        body: JSON.stringify({
+          email: result.data.email,
+          password: result.data.password,
+          totp_code: needs2FA ? totpCode : undefined,
+        }),
       });
-      const checkData = await checkRes.json();
 
-      if (checkData.required && !needs2FA) {
+      const authData = await authRes.json();
+
+      // If 2FA is required but no code provided yet
+      if (authData.requires_totp && !needs2FA) {
         setNeeds2FA(true);
         setSubmitting(false);
         return;
       }
-    } catch {
-      // If check fails, proceed without 2FA
-    }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: result.data.email,
-      password: result.data.password,
-    });
-    
-    if (error) {
-      toast({ title: "Login failed", description: "Invalid email or password.", variant: "destructive" });
-      setSubmitting(false);
-      setNeeds2FA(false);
-      setTotpCode("");
-      return;
-    }
-
-    // Verify 2FA code if required
-    if (needs2FA) {
-      try {
-        const verifyRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/totp-verify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: result.data.email, code: totpCode }),
-        });
-        const verifyData = await verifyRes.json();
-
-        if (!verifyData.verified) {
-          // Sign out since 2FA failed
-          await supabase.auth.signOut();
-          toast({ title: "2FA Failed", description: verifyData.error || "Invalid verification code.", variant: "destructive" });
-          setSubmitting(false);
-          return;
+      if (authData.error) {
+        toast({ title: "Login failed", description: authData.error, variant: "destructive" });
+        if (needs2FA) {
+          setTotpCode("");
         }
-      } catch {
-        await supabase.auth.signOut();
-        toast({ title: "Error", description: "2FA verification failed.", variant: "destructive" });
         setSubmitting(false);
         return;
       }
+
+      if (!authData.session) {
+        toast({ title: "Login failed", description: "Invalid response from server.", variant: "destructive" });
+        setSubmitting(false);
+        return;
+      }
+
+      // Set session from server response — session only exists AFTER all verification passed
+      await supabase.auth.setSession({
+        access_token: authData.session.access_token,
+        refresh_token: authData.session.refresh_token,
+      });
+
+      // Check if admin
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: roles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id);
+        if (roles?.some(r => r.role === "admin")) {
+          navigate("/admin");
+        } else {
+          navigate("/dashboard");
+        }
+      }
+    } catch {
+      toast({ title: "Error", description: "Authentication failed. Please try again.", variant: "destructive" });
     }
 
     setSubmitting(false);
-
-    // Check if admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id);
-      if (roles?.some(r => r.role === "admin")) {
-        navigate("/admin");
-      } else {
-        navigate("/dashboard");
-      }
-    }
   };
 
   return (

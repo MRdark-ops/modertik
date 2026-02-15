@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import QRCode from "qrcode";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -14,10 +15,22 @@ export default function SecuritySettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [setupData, setSetupData] = useState<{ secret: string; otpauth_uri: string } | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [code, setCode] = useState("");
   const [disableCode, setDisableCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState("");
+
+  // Generate QR code client-side when setup data changes
+  useEffect(() => {
+    if (setupData?.otpauth_uri) {
+      QRCode.toDataURL(setupData.otpauth_uri, { width: 200, margin: 2 })
+        .then((url: string) => setQrCodeUrl(url))
+        .catch(() => setQrCodeUrl(""));
+    } else {
+      setQrCodeUrl("");
+    }
+  }, [setupData]);
 
   const { data: totpStatus, isLoading: statusLoading } = useQuery({
     queryKey: ["totp-status", user?.id],
@@ -124,8 +137,8 @@ export default function SecuritySettingsPage() {
   const copySecret = () => {
     if (setupData?.secret) {
       navigator.clipboard.writeText(setupData.secret);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopied("secret");
+      setTimeout(() => setCopied(""), 2000);
     }
   };
 
@@ -175,19 +188,25 @@ export default function SecuritySettingsPage() {
               <div className="space-y-3">
                 <p className="text-sm font-medium">1. Scan QR code or enter secret manually</p>
                 <div className="flex flex-col items-center gap-4 p-4 rounded-lg bg-secondary/50 border border-border">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.otpauth_uri)}`}
-                    alt="TOTP QR Code"
-                    className="rounded-lg"
-                    width={200}
-                    height={200}
-                  />
+                  {qrCodeUrl ? (
+                    <img
+                      src={qrCodeUrl}
+                      alt="TOTP QR Code"
+                      className="rounded-lg"
+                      width={200}
+                      height={200}
+                    />
+                  ) : (
+                    <div className="w-[200px] h-[200px] flex items-center justify-center text-muted-foreground text-sm">
+                      Generating QR code...
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 w-full max-w-sm">
                     <code className="flex-1 text-xs bg-background p-2 rounded border border-border text-center break-all">
                       {setupData.secret}
                     </code>
                     <Button onClick={copySecret} variant="outline" size="icon" className="shrink-0">
-                      {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                      {copied === "secret" ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
                     </Button>
                   </div>
                 </div>
