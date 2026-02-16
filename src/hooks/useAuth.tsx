@@ -27,47 +27,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [profile, setProfile] = useState<AuthContextType["profile"]>(null);
 
+  const fetchUserData = async (userId: string) => {
+    const [rolesRes, profRes] = await Promise.all([
+      supabase.from("user_roles").select("role").eq("user_id", userId),
+      supabase.from("profiles").select("full_name, referral_code, balance").eq("user_id", userId).single(),
+    ]);
+    setIsAdmin(rolesRes.data?.some((r) => r.role === "admin") ?? false);
+    setProfile(profRes.data);
+  };
+
   useEffect(() => {
-    // Set up auth state listener FIRST
+    let isMounted = true;
+
+    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      (_event, session) => {
+        if (!isMounted) return;
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          // Defer data fetching to avoid deadlock
-          setTimeout(async () => {
-            // Check admin role
-            const { data: roles } = await supabase
-              .from("user_roles")
-              .select("role")
-              .eq("user_id", session.user.id);
-            setIsAdmin(roles?.some((r) => r.role === "admin") ?? false);
-
-            // Get profile
-            const { data: prof } = await supabase
-              .from("profiles")
-              .select("full_name, referral_code, balance")
-              .eq("user_id", session.user.id)
-              .single();
-            setProfile(prof);
-            setLoading(false);
+          // Defer to avoid deadlock, but don't control loading here
+          setTimeout(() => {
+            if (isMounted) fetchUserData(session.user.id);
           }, 0);
         } else {
           setIsAdmin(false);
           setProfile(null);
-          setLoading(false);
         }
       }
     );
 
-    // THEN get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) setLoading(false);
-      // onAuthStateChange will handle the rest
-    });
+    // Initial load - fetch session AND user data BEFORE setting loading=false
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
 
-    return () => subscription.unsubscribe();
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          await fetchUserData(session.user.id);
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    initializeAuth();
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
