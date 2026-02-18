@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
 
     const { withdrawal_id, action, admin_note } = await req.json();
 
-    if (!withdrawal_id || !["approve", "reject"].includes(action)) {
+    if (!withdrawal_id || !["approve", "reject", "in_progress", "completed"].includes(action)) {
       return new Response(JSON.stringify({ error: "Invalid request" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -82,14 +82,29 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (withdrawal.status !== "pending") {
-      return new Response(JSON.stringify({ error: "Withdrawal already processed" }), {
+    // Validate state transitions
+    const validTransitions: Record<string, string[]> = {
+      pending: ["approved", "rejected"],
+      approved: ["in_progress"],
+      in_progress: ["completed"],
+    };
+
+    const statusMap: Record<string, string> = {
+      approve: "approved",
+      reject: "rejected",
+      in_progress: "in_progress",
+      completed: "completed",
+    };
+
+    const newStatus = statusMap[action];
+    const allowed = validTransitions[withdrawal.status] || [];
+
+    if (!allowed.includes(newStatus)) {
+      return new Response(JSON.stringify({ error: `Cannot transition from ${withdrawal.status} to ${newStatus}` }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const newStatus = action === "approve" ? "approved" : "rejected";
 
     await supabaseAdmin
       .from("withdrawals")
@@ -114,7 +129,7 @@ Deno.serve(async (req) => {
 
     await supabaseAdmin.from("activity_logs").insert({
       user_id: withdrawal.user_id,
-      action: action === "approve" ? "withdrawal_approved" : "withdrawal_rejected",
+      action: `withdrawal_${action === "approve" ? "approved" : action === "reject" ? "rejected" : action}`,
       details: { withdrawal_id, amount: withdrawal.amount, processed_by: user.id, note: admin_note },
     });
 
