@@ -32,6 +32,7 @@ export default function DepositPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showTelegram, setShowTelegram] = useState(false);
   const [lastDepositAmount, setLastDepositAmount] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
@@ -115,6 +116,7 @@ export default function DepositPage() {
       } else {
         setLastDepositAmount(result.data.amount.toFixed(2));
         setShowConfirmation(true);
+        setTimeout(() => setShowTelegram(true), 5000);
         setAmount("");
         setFile(null);
         queryClient.invalidateQueries({ queryKey: ["deposits"] });
@@ -222,6 +224,35 @@ export default function DepositPage() {
             <DialogClose asChild>
               <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                 <X className="w-4 h-4 mr-2" /> Close
+              </Button>
+            </DialogClose>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Telegram Channel Popup */}
+      <Dialog open={showTelegram} onOpenChange={setShowTelegram}>
+        <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              📢 انضم إلى قناتنا
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-right">
+              اضغط على الرابط أدناه للاشتراك في القناة والتعلم
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <a
+              href="https://t.me/powerattack"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full text-center py-3 px-4 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-colors"
+            >
+              t.me/powerattack
+            </a>
+            <DialogClose asChild>
+              <Button variant="outline" className="w-full">
+                إغلاق
               </Button>
             </DialogClose>
           </div>
