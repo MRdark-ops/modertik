@@ -1,12 +1,14 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
-import { Search, UserCog, Ban, CheckCircle } from "lucide-react";
+import { Search, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
+  const queryClient = useQueryClient();
 
   const { data: users } = useQuery({
     queryKey: ["admin-users"],
@@ -18,7 +20,6 @@ export default function AdminUsersPage() {
 
       if (!profiles) return [];
 
-      // Get referral counts
       const { data: referrals } = await supabase
         .from("referrals")
         .select("referrer_id, level")
@@ -29,7 +30,6 @@ export default function AdminUsersPage() {
         refCounts[r.referrer_id] = (refCounts[r.referrer_id] || 0) + 1;
       });
 
-      // Get roles
       const { data: roles } = await supabase.from("user_roles").select("user_id, role");
       const roleMap: Record<string, string> = {};
       roles?.forEach((r) => { roleMap[r.user_id] = r.role; });
@@ -41,6 +41,28 @@ export default function AdminUsersPage() {
       }));
     },
   });
+
+  const handleUserAction = async (userId: string, action: "promote" | "demote" | "delete") => {
+    const confirmMsg = action === "delete"
+      ? "هل أنت متأكد من حذف هذا المستخدم؟"
+      : action === "promote"
+        ? "هل تريد ترقية هذا المستخدم إلى أدمن؟"
+        : "هل تريد تخفيض هذا المستخدم من أدمن؟";
+
+    if (!confirm(confirmMsg)) return;
+
+    const { error } = await supabase.functions.invoke("manage-user-role", {
+      body: { target_user_id: userId, action },
+    });
+
+    if (error) {
+      toast.error("فشلت العملية");
+    } else {
+      const msgs = { promote: "تمت الترقية بنجاح", demote: "تم التخفيض بنجاح", delete: "تم حذف المستخدم" };
+      toast.success(msgs[action]);
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    }
+  };
 
   const filtered = (users ?? []).filter(
     (u) =>
@@ -70,6 +92,7 @@ export default function AdminUsersPage() {
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Referrals</th>
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Joined</th>
                   <th className="text-left py-3 px-4 text-muted-foreground font-medium">Role</th>
+                  <th className="text-left py-3 px-4 text-muted-foreground font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -86,6 +109,31 @@ export default function AdminUsersPage() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         u.role === 'admin' ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-secondary text-muted-foreground border border-border'
                       }`}>{u.role}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex gap-1">
+                        {u.role === "user" ? (
+                          <button
+                            onClick={() => handleUserAction(u.user_id, "promote")}
+                            className="px-2 py-1 text-xs rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 flex items-center gap-1"
+                          >
+                            <ShieldCheck className="w-3 h-3" /> Promote
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleUserAction(u.user_id, "demote")}
+                            className="px-2 py-1 text-xs rounded bg-warning/10 text-warning border border-warning/20 hover:bg-warning/20 flex items-center gap-1"
+                          >
+                            <ShieldOff className="w-3 h-3" /> Demote
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleUserAction(u.user_id, "delete")}
+                          className="px-2 py-1 text-xs rounded bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

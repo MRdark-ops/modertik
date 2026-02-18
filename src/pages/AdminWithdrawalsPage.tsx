@@ -3,6 +3,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { CheckCircle, Clock, CircleCheck } from "lucide-react";
 
 export default function AdminWithdrawalsPage() {
   const queryClient = useQueryClient();
@@ -18,14 +19,42 @@ export default function AdminWithdrawalsPage() {
     },
   });
 
-  const handleAction = async (withdrawalId: string, action: "approve" | "reject") => {
+  const handleAction = async (withdrawalId: string, action: "approve" | "reject" | "in_progress" | "completed") => {
     const { error } = await supabase.functions.invoke("approve-withdrawal", {
       body: { withdrawal_id: withdrawalId, action, admin_note: "" },
     });
-    if (error) toast.error("Failed to process withdrawal");
+    if (error) toast.error("فشلت العملية");
     else {
-      toast.success(`Withdrawal ${action}d`);
+      toast.success(`تم تحديث الحالة بنجاح`);
       queryClient.invalidateQueries({ queryKey: ["admin-withdrawals"] });
+    }
+  };
+
+  const getActions = (status: string, id: string) => {
+    switch (status) {
+      case "pending":
+        return (
+          <div className="flex gap-1">
+            <button onClick={() => handleAction(id, "approve")} className="px-2 py-1 text-xs rounded bg-success/10 text-success border border-success/20 hover:bg-success/20 flex items-center gap-1">
+              <CheckCircle className="w-3 h-3" /> Approve
+            </button>
+            <button onClick={() => handleAction(id, "reject")} className="px-2 py-1 text-xs rounded bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20">Reject</button>
+          </div>
+        );
+      case "approved":
+        return (
+          <button onClick={() => handleAction(id, "in_progress")} className="px-2 py-1 text-xs rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 flex items-center gap-1">
+            <Clock className="w-3 h-3" /> In Progress
+          </button>
+        );
+      case "in_progress":
+        return (
+          <button onClick={() => handleAction(id, "completed")} className="px-2 py-1 text-xs rounded bg-success/10 text-success border border-success/20 hover:bg-success/20 flex items-center gap-1">
+            <CircleCheck className="w-3 h-3" /> Completed
+          </button>
+        );
+      default:
+        return null;
     }
   };
 
@@ -51,14 +80,7 @@ export default function AdminWithdrawalsPage() {
                     <td className="py-3 px-4 font-semibold">${Number(w.amount).toFixed(2)}</td>
                     <td className="py-3 px-4 text-muted-foreground">{new Date(w.created_at).toLocaleDateString()}</td>
                     <td className="py-3 px-4"><StatusBadge status={w.status as any} /></td>
-                    <td className="py-3 px-4">
-                      {w.status === "pending" && (
-                        <div className="flex gap-1">
-                          <button onClick={() => handleAction(w.id, "approve")} className="px-2 py-1 text-xs rounded bg-success/10 text-success border border-success/20 hover:bg-success/20">Approve</button>
-                          <button onClick={() => handleAction(w.id, "reject")} className="px-2 py-1 text-xs rounded bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20">Reject</button>
-                        </div>
-                      )}
-                    </td>
+                    <td className="py-3 px-4">{getActions(w.status, w.id)}</td>
                   </tr>
                 ))}
               </tbody>
