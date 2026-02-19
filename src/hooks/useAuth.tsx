@@ -24,6 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [roleLoading, setRoleLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [profile, setProfile] = useState<AuthContextType["profile"]>(null);
   const initializedRef = useRef(false);
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Prevent concurrent fetches
     if (fetchingRef.current) return;
     fetchingRef.current = true;
+    setRoleLoading(true);
     try {
       const [rolesRes, profRes] = await Promise.all([
         supabase.from("user_roles").select("role").eq("user_id", userId),
@@ -42,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profRes.data) setProfile(profRes.data);
     } finally {
       fetchingRef.current = false;
+      setRoleLoading(false);
     }
   }, []);
 
@@ -101,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, profile, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading: loading || roleLoading, isAdmin, profile, signOut }}>
       {children}
     </AuthContext.Provider>
   );
