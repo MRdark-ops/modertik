@@ -82,18 +82,11 @@ export default function LoginPage() {
         refresh_token: authData.session.refresh_token,
       });
 
-      // Check if admin
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: roles } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id);
-        if (roles?.some(r => r.role === "admin")) {
-          navigate("/admin");
-        } else {
-          navigate("/dashboard");
-        }
+      // Navigate based on server-side role check
+      if (authData.is_admin) {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
       }
     } catch {
       toast({ title: "Error", description: "Authentication failed. Please try again.", variant: "destructive" });
