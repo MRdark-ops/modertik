@@ -144,7 +144,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Step 3: Return session tokens (only after all verification passed)
+    // Step 3: Check if user is admin
+    const { data: roles } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId);
+    const isAdmin = roles?.some((r: { role: string }) => r.role === "admin") ?? false;
+
+    // Step 4: Return session tokens (only after all verification passed)
     return new Response(JSON.stringify({
       session: {
         access_token: signInData.session.access_token,
@@ -157,6 +164,7 @@ Deno.serve(async (req) => {
         id: signInData.user.id,
         email: signInData.user.email,
       },
+      is_admin: isAdmin,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
