@@ -1,7 +1,7 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Users, DollarSign, ArrowDownToLine, ArrowUpFromLine, Activity } from "lucide-react";
+import { Users, DollarSign, ArrowDownToLine, ArrowUpFromLine, Activity, Eye, TrendingUp } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -12,20 +12,25 @@ export default function AdminDashboard() {
   const { data: stats } = useQuery({
     queryKey: ["admin-stats"],
     queryFn: async () => {
-      const [usersRes, depositsRes, withdrawalsRes, commissionsRes] = await Promise.all([
+    const [usersRes, depositsRes, withdrawalsRes, commissionsRes, visitsRes] = await Promise.all([
         supabase.from("profiles").select("id", { count: "exact", head: true }),
         supabase.from("deposits").select("amount").eq("status", "approved"),
-        supabase.from("withdrawals").select("amount").eq("status", "approved"),
+        supabase.from("withdrawals").select("amount"),
         supabase.from("referral_commissions").select("commission_amount"),
+        supabase.from("site_visits").select("id", { count: "exact", head: true }),
       ]);
       const totalDeposits = depositsRes.data?.reduce((s, d) => s + Number(d.amount), 0) ?? 0;
-      const totalWithdrawals = withdrawalsRes.data?.reduce((s, w) => s + Number(w.amount), 0) ?? 0;
+      const approvedWithdrawals = withdrawalsRes.data?.filter((w: any) => ["approved", "completed"].includes(w.status)) ?? [];
+      const totalWithdrawals = approvedWithdrawals.reduce((s: number, w: any) => s + Number(w.amount), 0);
       const totalCommissions = commissionsRes.data?.reduce((s, c) => s + Number(c.commission_amount), 0) ?? 0;
+      const netEarnings = totalDeposits - totalWithdrawals;
       return {
         users: usersRes.count ?? 0,
         deposits: totalDeposits,
         withdrawals: totalWithdrawals,
         commissions: totalCommissions,
+        visits: visitsRes.count ?? 0,
+        netEarnings,
       };
     },
   });
@@ -74,11 +79,13 @@ export default function AdminDashboard() {
   return (
     <DashboardLayout isAdmin title="Admin Overview">
       <div className="space-y-6 animate-fade-in">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatCard title="Total Users" value={String(stats?.users ?? 0)} icon={Users} />
+          <StatCard title="Total Visits" value={String(stats?.visits ?? 0)} icon={Eye} />
           <StatCard title="Total Deposits" value={fmt(stats?.deposits ?? 0)} icon={ArrowDownToLine} />
           <StatCard title="Total Withdrawals" value={fmt(stats?.withdrawals ?? 0)} icon={ArrowUpFromLine} />
           <StatCard title="Commissions Paid" value={fmt(stats?.commissions ?? 0)} icon={DollarSign} />
+          <StatCard title="Net Earnings" value={fmt(stats?.netEarnings ?? 0)} icon={TrendingUp} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -45,13 +45,13 @@ async function verifyTOTP(secret: string, code: string, window = 1): Promise<boo
   return false;
 }
 
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 15;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
-
-  const startTime = Date.now();
-  const MIN_RESPONSE_TIME = 200;
 
   try {
     const supabaseAdmin = createClient(
@@ -74,20 +74,43 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Step 1: Authenticate with password using a separate admin client
-    // We use signInWithPassword via a temporary client to validate credentials
-    // WITHOUT exposing a session to the client yet
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Rate limiting: check recent failed attempts
+    const cutoff = new Date(Date.now() - LOCKOUT_MINUTES * 60 * 1000).toISOString();
+    const { count: failedCount } = await supabaseAdmin
+      .from("login_attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("email", normalizedEmail)
+      .eq("success", false)
+      .gte("created_at", cutoff);
+
+    if ((failedCount ?? 0) >= MAX_ATTEMPTS) {
+      return new Response(JSON.stringify({ 
+        error: `Too many login attempts. Please try again after ${LOCKOUT_MINUTES} minutes.` 
+      }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Step 1: Authenticate with password
     const tempClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!
     );
 
     const { data: signInData, error: signInError } = await tempClient.auth.signInWithPassword({
-      email,
+      email: normalizedEmail,
       password,
     });
 
     if (signInError || !signInData.user) {
+      // Log failed attempt
+      await supabaseAdmin.from("login_attempts").insert({
+        email: normalizedEmail,
+        success: false,
+      });
+
       return new Response(JSON.stringify({ error: "Invalid email or password" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -103,16 +126,13 @@ Deno.serve(async (req) => {
       .single();
 
     if (totp?.is_enabled) {
-      // 2FA is required
       if (!totp_code) {
-        // Sign out the temp session - don't return tokens yet
         await tempClient.auth.signOut();
         return new Response(JSON.stringify({ requires_totp: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Validate TOTP code format
       if (typeof totp_code !== "string" || !/^\d{6}$/.test(totp_code)) {
         await tempClient.auth.signOut();
         return new Response(JSON.stringify({ error: "Invalid TOTP code format" }), {
@@ -120,7 +140,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Verify TOTP
       const valid = await verifyTOTP(totp.totp_secret, totp_code);
       if (!valid) {
         await tempClient.auth.signOut();
@@ -131,18 +150,29 @@ Deno.serve(async (req) => {
           details: { timestamp: new Date().toISOString() },
         });
 
+        // Count as failed attempt
+        await supabaseAdmin.from("login_attempts").insert({
+          email: normalizedEmail,
+          success: false,
+        });
+
         return new Response(JSON.stringify({ error: "Invalid verification code" }), {
           status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Log successful 2FA
       await supabaseAdmin.from("activity_logs").insert({
         user_id: userId,
         action: "2fa_verified",
         details: { timestamp: new Date().toISOString() },
       });
     }
+
+    // Log successful login
+    await supabaseAdmin.from("login_attempts").insert({
+      email: normalizedEmail,
+      success: true,
+    });
 
     // Step 3: Check if user is admin
     const { data: roles } = await supabaseAdmin
@@ -151,7 +181,7 @@ Deno.serve(async (req) => {
       .eq("user_id", userId);
     const isAdmin = roles?.some((r: { role: string }) => r.role === "admin") ?? false;
 
-    // Step 4: Return session tokens (only after all verification passed)
+    // Step 4: Return session tokens
     return new Response(JSON.stringify({
       session: {
         access_token: signInData.session.access_token,
