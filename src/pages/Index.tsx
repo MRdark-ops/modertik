@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { TrendingUp, Shield, Users, ArrowRight, Wallet, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import authBg from "@/assets/auth-bg.jpg";
+import { useVisitTracker } from "@/hooks/useVisitTracker";
 
 const features = [
   { icon: Wallet, title: "Secure Deposits", desc: "Fund your account with verified payment methods and admin-approved transactions." },
@@ -11,6 +12,7 @@ const features = [
 ];
 
 export default function Index() {
+  useVisitTracker();
   return (
     <div className="min-h-screen">
       {/* Nav */}
